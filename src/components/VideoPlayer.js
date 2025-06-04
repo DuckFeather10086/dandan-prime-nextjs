@@ -31,21 +31,14 @@ export default function VideoPlayer({
     let hls = null;
     let assInstance = null;
 
-    const initializePlayer = async () => {
+
       try {
         // 获取剧集信息
-        const response = await fetch(`${apiHost}/api/bangumi/episode/${episodeId}`);
-        const data = await response.json();
-        const videoUrl = `${apiHost}/videos${data.file_path}/${data.file_name}`;
 
-        // 获取HLS状态
-        const hlsResponse = await fetch(`${apiHost}/api/hls/enabled`);
-        const hlsData = await hlsResponse.json();
-        const hlsEnabled = hlsData.hls_enabled;
 
         art = new Artplayer({
           container: artRef.current,
-          url: videoSrc || videoUrl,
+          url: videoSrc,
           poster: posterSrc,
           title: `${title} 第${episode}话`,
           volume: 0.5,
@@ -99,18 +92,7 @@ export default function VideoPlayer({
               handleResolutionChange(item.value);
             },
           }],
-
-          // subtitle: {
-          //   url: subtitleOptions.length > 0 ? subtitleOptions[0].url : '',
-          //   type: 'vtt',
-          //   style: {
-          //     color: '#fff',
-          //     fontSize: '20px',
-          //   },
-          //   encoding: 'utf-8',
-          // },
-          //
-
+          
           customType: {
             m3u8: function (video, url) {
               if (Hls.isSupported() && hlsEnabled) {
@@ -147,16 +129,22 @@ export default function VideoPlayer({
         playerRef.current = art;
 
         if (typeof window !== 'undefined') {
-          const { default: ASS } = await import('assjs');
-
-          const res = await fetch('http://100.115.247.103:1234/subtitles/[CASO][Bakemonogatari]/[CASO][Bakemonogatari][01][BDRIP][1920x1080][x264_FLAC_2][28DA3E0D].SC.ass');
-          const assContent = await res.text();
-
-          assInstance = new ASS(assContent, art.template.$video, {
-            container: assRef.current,
-          });
-
-          assInstance.show();
+          (async () => {
+            const { default: ASS } = await import('assjs');
+            
+            try {
+              const response = await fetch('http://100.115.247.103:1234/subtitles/[CASO][Bakemonogatari]/[CASO][Bakemonogatari][01][BDRIP][1920x1080][x264_FLAC_2][28DA3E0D].SC.ass');
+              const text = await response.text();
+              
+              assInstance = new ASS(text, art.template.$video, {
+                container: assRef.current,
+              });
+              
+              assInstance.show();
+            } catch (error) {
+              console.error('Error loading subtitles:', error);
+            }
+          })();
         }
 
         art.on('video:timeupdate', () => {
@@ -172,9 +160,7 @@ export default function VideoPlayer({
       } catch (error) {
         console.error('初始化播放器失败:', error);
       }
-    };
 
-    initializePlayer();
 
 
     return () => {
