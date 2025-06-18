@@ -9,6 +9,7 @@ import Hls from 'hls.js';
 export default function VideoPlayer({
   videoSrc,
   posterSrc,
+  subtitleSrc,
   title,
   episode,
   onPrevEpisode,
@@ -133,7 +134,7 @@ export default function VideoPlayer({
             const { default: ASS } = await import('assjs');
             
             try {
-              const response = await fetch('http://100.115.247.103:1234/subtitles/[CASO][Bakemonogatari]/[CASO][Bakemonogatari][01][BDRIP][1920x1080][x264_FLAC_2][28DA3E0D].SC.ass');
+              const response = await fetch(subtitleSrc);
               const text = await response.text();
               
               assInstance = new ASS(text, art.template.$video, {

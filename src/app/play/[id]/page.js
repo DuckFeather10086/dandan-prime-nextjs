@@ -105,6 +105,11 @@ export default function VideoPage() {
           console.error('调用播放列表 API 错误:', error);
         }
       }
+      let subtitleSrc = "";
+
+      if (data.subtitles && data.subtitles.length > 0) {
+        subtitleSrc = apiHost + `/subtitles${data.file_path}/${data.subtitles[0]}`;
+      }
 
       // Update video data state
       setVideoData({
@@ -114,7 +119,8 @@ export default function VideoPage() {
         posterSrc: data.poster_path ? `${apiHost}/images${data.poster_path}` : "",
         episodeId: episodeId,
         subtitleOptions: data.subtitles || [],
-        danmakuItems: data.danmaku || []
+        danmakuItems: data.danmaku || [],
+        subtitleSrc: subtitleSrc
       });
       
       
@@ -137,11 +143,15 @@ export default function VideoPage() {
     }
   };
 
+
+
+
   return (
     <div className="container mx-auto px-4">
       <VideoPlayer
         videoSrc={videoData.videoSrc}
         posterSrc={videoData.posterSrc}
+        subtitleSrc={videoData.subtitleSrc}
         title={videoData.title}
         episode={episode}
         episodeId={episodeId}
