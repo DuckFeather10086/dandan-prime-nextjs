@@ -110,6 +110,10 @@ export default function VideoPage() {
       if (data.subtitles && data.subtitles.length > 0) {
         subtitleSrc = apiHost + `/subtitles${data.file_path}/${data.subtitles[0]}`;
       }
+      const danmakuResponse = await fetch(`${apiHost}/api/bangumi/danmaku/${episodeId}`);
+      const danmakuItems = await danmakuResponse.json();
+
+      console.log("danmakuItems fetched", danmakuItems.danmakus);
 
       // Update video data state
       setVideoData({
@@ -119,7 +123,7 @@ export default function VideoPage() {
         posterSrc: data.poster_path ? `${apiHost}/images${data.poster_path}` : "",
         episodeId: episodeId,
         subtitleOptions: data.subtitles || [],
-        danmakuItems: data.danmaku || [],
+        danmakuItems: danmakuItems.danmakus,
         subtitleSrc: subtitleSrc
       });
       
@@ -160,7 +164,8 @@ export default function VideoPage() {
         hasPrevEpisode={episode > 1}
         hasNextEpisode={episode < 12}
         subtitleOptions={videoData.subtitleOptions}
-      />
+        danmakuItems={videoData.danmakuItems}
+                />
     </div>
   );
 }
