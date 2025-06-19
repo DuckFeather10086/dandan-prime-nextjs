@@ -3,6 +3,7 @@
 import { useState, use, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import VideoPlayer from '@/components/VideoPlayer';
+import Hls from 'hls.js';   
 
 export default function VideoPage() {
   const params = useParams();
@@ -77,6 +78,7 @@ export default function VideoPage() {
     try {
       const response = await fetch(`${apiHost}/api/hls/enabled`);
       const data = await response.json();
+      console.log("hlsEnabled", data.hls_enabled);
       return data.hls_enabled;
     } catch (error) {
       console.error('获取HLS状态失败:', error);
@@ -95,7 +97,9 @@ export default function VideoPage() {
       let videoUrl = `${apiHost}/videos${data.file_path}/${data.file_name}`;
       
       // 如果启用了HLS，使用HLS播放列表URL
-      if (hlsEnabled) {
+      const hlsStatus = await fetchHlsEnabled();
+      console.log("hlsStatus", hlsStatus);
+      if (hlsStatus) {
         try {
           await fetch(`${apiHost}/api/playlist/${episodeId}`, {
             method: 'POST'
@@ -124,7 +128,8 @@ export default function VideoPage() {
         episodeId: episodeId,
         subtitleOptions: data.subtitles || [],
         danmakuItems: danmakuItems.danmakus,
-        subtitleSrc: subtitleSrc
+        subtitleSrc: subtitleSrc,
+        hlsEnabled: hlsStatus
       });
       
       
@@ -165,7 +170,8 @@ export default function VideoPage() {
         hasNextEpisode={episode < 12}
         subtitleOptions={videoData.subtitleOptions}
         danmakuItems={videoData.danmakuItems}
-                />
+        hlsEnabled={videoData.hlsEnabled}
+      />
     </div>
   );
 }

@@ -17,13 +17,14 @@ export default function VideoPlayer({
   onNextEpisode,
   hasPrevEpisode = true,
   hasNextEpisode = true,
-  subtitleOptions = [],
   episodeId,
-  danmakuItems = []
+  danmakuItems = [],
+  hlsEnabled = false
 }) {
   const artRef = useRef();
   const assRef = useRef(null);
   const playerRef = useRef(null);
+  const assInstanceRef = useRef(null);
   const [showNextEpisode, setShowNextEpisode] = useState(false);
   const [selectedResolution, setSelectedResolution] = useState(1080);
   const [hlsInstance, setHlsInstance] = useState(null);
@@ -32,7 +33,6 @@ export default function VideoPlayer({
   useEffect(() => {
     let art = null;
     let hls = null;
-    let assInstance = null;
 
     // Ensure the container exists before initializing
     if (!artRef.current) {
@@ -163,24 +163,121 @@ export default function VideoPlayer({
       // Store the player instance
       playerRef.current = art;
 
-      if (typeof window !== 'undefined') {
-        (async () => {
-          const { default: ASS } = await import('assjs');
-          
-          try {
-            const response = await fetch(subtitleSrc);
-            const text = await response.text();
-            
-            assInstance = new ASS(text, art.template.$video, {
-              container: assRef.current,
-            });
-            
-            assInstance.show();
-          } catch (error) {
-            console.error('Error loading subtitles:', error);
+      // Handle fullscreen and resize changes
+      const handleResize = () => {
+        if (!art || !assInstanceRef.current) return;
+        
+        // Force update ASS renderer dimensions
+        const video = art.template.$video;
+        if (video && assInstanceRef.current.video) {
+          const { videoWidth, videoHeight } = video;
+          if (videoWidth && videoHeight) {
+            assInstanceRef.current.resize(videoWidth, videoHeight);
           }
-        })();
+        }
+      };
+
+      // Load ASS subtitles
+      const loadSubtitles = async () => {
+        if (typeof window === 'undefined' || !subtitleSrc) return;
+        
+        try {
+          // Clean up existing instance if it exists
+          if (assInstanceRef.current) {
+            assInstanceRef.current.destroy();
+            assInstanceRef.current = null;
+          }
+
+          const { default: ASS } = await import('assjs');
+          const response = await fetch(subtitleSrc);
+          const text = await response.text();
+          
+          assInstanceRef.current = new ASS(text, art.template.$video, {
+            container: assRef.current,
+          });
+          
+          assInstanceRef.current.show();
+        } catch (error) {
+          console.error('Error loading subtitles:', error);
+        }
+      };
+
+      // Initial subtitle load
+      loadSubtitles();  
+      
+      // Create a ResizeObserver to handle container size changes
+      const resizeObserver = new ResizeObserver(handleResize);
+      if (artRef.current) {
+        resizeObserver.observe(artRef.current);
       }
+
+      const updateAssContainerSize = (isFullscreen, isWebFullscreen) => {
+        if (!artRef.current || !assInstanceRef.current) return;
+        
+        const container = artRef.current;
+        const assContainer = container.querySelector('.ass-container');
+        if (!assContainer) return;
+        
+        // Reset styles first
+        assContainer.style.position = 'absolute';
+        assContainer.style.top = '0';
+        assContainer.style.left = '0';
+        assContainer.style.width = '100%';
+        assContainer.style.height = '100%';
+        assContainer.style.zIndex = '20';
+        
+        if (isFullscreen || isWebFullscreen) {
+          // In fullscreen mode, make it cover the entire viewport
+          const targetElement = isWebFullscreen ? document.documentElement : document.fullscreenElement;
+          if (targetElement) {
+            assContainer.style.width = `${targetElement.clientWidth}px`;
+            assContainer.style.height = `${targetElement.clientHeight}px`;
+          }
+        } else {
+          // In normal mode, match the video container
+          assContainer.style.width = '100%';
+          assContainer.style.height = '100%';
+        }
+        
+        // Force ASS to recalculate and redraw
+        if (assInstanceRef.current) {
+          assInstanceRef.current.resize();
+          assInstanceRef.current.setRenderMode('pre-cache');
+        }
+      };
+
+      const handleFullscreen = () => {
+        console.log("handleFullscreen");
+        setTimeout(() => {
+          updateAssContainerSize(true, false);
+          if (assInstanceRef.current) {
+            loadSubtitles();
+          }
+        }, 100);
+      };
+
+      const handleWebFullscreen = () => {
+        console.log("handleWebFullscreen");
+          updateAssContainerSize(false, true);
+          if (assInstanceRef.current) {
+            loadSubtitles();
+          }
+      };
+
+      const handleFullscreenExit = () => {
+        setTimeout(() => {
+          updateAssContainerSize(false, false);
+          if (assInstanceRef.current) {
+            loadSubtitles();
+          }
+        }, 100);
+      };
+
+      art.on('resize', handleResize);
+      art.on('fullscreen', handleFullscreen);
+      art.on('fullscreenWeb', handleWebFullscreen);
+      art.on('fullscreenExit', handleFullscreenExit);
+      art.on('fullscreenWebExit', handleFullscreenExit);
 
       art.on('video:timeupdate', () => {
         const duration = art.duration;
@@ -195,7 +292,19 @@ export default function VideoPlayer({
 
       // Cleanup function
       return () => {
+        if (resizeObserver) {
+          resizeObserver.disconnect();
+        }
+
+        if (assInstanceRef.current) {
+          assInstanceRef.current.destroy();
+          assInstanceRef.current = null;
+        }
+
         if (art) {
+          art.off('resize');
+          art.off('fullscreen');
+          art.off('fullscreenWeb');
           art.destroy();
         }
         if (hls) {
@@ -205,7 +314,18 @@ export default function VideoPlayer({
     } catch (error) {
       console.error('初始化播放器失败:', error);
     }
-  }, [videoSrc, posterSrc, title, episode, selectedResolution]);
+  }, [
+    videoSrc,
+    posterSrc,
+    title,
+    episode,
+    selectedResolution,
+    subtitleSrc,
+    hlsEnabled,
+    danmakuItems,
+    apiHost,
+    episodeId,
+  ]);
 
   const handleResolutionChange = async (resolution) => {
     setSelectedResolution(resolution);
@@ -213,11 +333,11 @@ export default function VideoPlayer({
 
     try {
       await fetch(`${apiHost}/api/playlist/${episodeId}`, {
-        method: 'POST'
+        method: 'POST',
       });
 
-      if (hlsInstance) {
-        hlsInstance.loadSource(`${apiHost}/stream/playlist_${resolution}.m3u8`);
+      if (hlsInstanceRef.current) {
+        hlsInstanceRef.current.loadSource(`${apiHost}/stream/playlist_${resolution}.m3u8`);
         playerRef.current.currentTime = currentTime;
         playerRef.current.play();
       }
@@ -231,14 +351,21 @@ export default function VideoPlayer({
       <h1 className="text-2xl font-bold mb-4">{title}</h1>
 
       <div className="w-full aspect-video bg-black rounded-lg overflow-hidden relative">
-        <div className="relative w-full aspect-video">
-          {/* Artplayer 容器 */}
+        <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden" style={{ position: 'relative', width: '100%', height: '100%' }}>
           <div ref={artRef} className="w-full h-full" />
-
-          {/* ASS 容器 - 绝对定位在 Artplayer 上层 */}
           <div
             ref={assRef}
-            className="absolute inset-0 z-10 pointer-events-none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              zIndex: 10,
+              pointerEvents: 'none',
+              contain: 'layout',
+              overflow: 'hidden',
+            }}
           />
         </div>
 
