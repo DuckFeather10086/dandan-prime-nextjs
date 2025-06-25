@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
 import artplayerPluginDanmuku from 'artplayer-plugin-danmuku';
+import artplayerPluginLibass from 'artplayer-plugin-libass';
 
 
 
@@ -30,6 +31,8 @@ export default function VideoPlayer({
   const [hlsInstance, setHlsInstance] = useState(null);
   const apiHost = process.env.NEXT_PUBLIC_API_HOST || '';
 
+  
+
   useEffect(() => {
     let art = null;
     let hls = null;
@@ -40,8 +43,19 @@ export default function VideoPlayer({
       return;
     }
 
+    if (!subtitleSrc || !artRef.current) {
+      console.warn('ArtPlayer container or subtitleSrc not ready');
+      return;
+    }
+
     try {
+      console.log('subtitleSrc', subtitleSrc);
+
       art = new Artplayer({
+        subtitle: {
+          url:subtitleSrc,
+        },
+
         container: artRef.current,
         url: videoSrc,
         poster: posterSrc,
@@ -69,7 +83,6 @@ export default function VideoPlayer({
         theme: '#23ade5',
         lang: navigator.language.toLowerCase(),
         whitelist: ['*'],
-
         settings: [{
           html: '清晰度',
           icon: '<svg>...</svg>',
@@ -157,25 +170,41 @@ export default function VideoPlayer({
               SPEED: {}, // 弹幕速度配置项
               COLOR: [], // 颜色列表配置项
           }),
+          artplayerPluginLibass({
+            workerUrl: 'http://100.115.247.103:3000/assets/wasm/subtitles-octopus-worker.js',
+            wasmUrl: 'http://100.115.247.103:3000/assets/wasm/subtitles-octopus-worker.wasm',
+            fallbackFont: 'http://100.115.247.103:3000/assets/fonts/SourceHanSansCN-Bold.woff2'
+          }),
         ],
       });
 
+      // init
+      art.on('artplayerPluginLibass:init', (adapter) => {
+        console.info('artplayerPluginLibass:init', adapter);
+      });
+
+      // subtitle switch
+      art.on('artplayerPluginLibass:switch', (url) => {
+        console.info('artplayerPluginLibass:switch', url);
+      })
+
+      // subtitle visible
+      art.on('artplayerPluginLibass:visible', (visible) => {
+        console.info('artplayerPluginLibass:visible', visible);
+      })
+
+      // subtitle timeOffset
+      art.on('artplayerPluginLibass:timeOffset', (timeOffset) => {
+        console.info('artplayerPluginLibass:timeOffset', timeOffset);
+      })
+
+      // destroy
+      art.on('artplayerPluginLibass:destroy', () => {
+        console.info('artplayerPluginLibass:destroy');
+      })
+
       // Store the player instance
       playerRef.current = art;
-
-      // Handle fullscreen and resize changes
-      const handleResize = () => {
-        if (!art || !assInstanceRef.current) return;
-        
-        // Force update ASS renderer dimensions
-        const video = art.template.$video;
-        if (video && assInstanceRef.current.video) {
-          const { videoWidth, videoHeight } = video;
-          if (videoWidth && videoHeight) {
-            assInstanceRef.current.resize(videoWidth, videoHeight);
-          }
-        }
-      };
 
       // Load ASS subtitles
       const loadSubtitles = async () => {
@@ -203,81 +232,11 @@ export default function VideoPlayer({
       };
 
       // Initial subtitle load
-      loadSubtitles();  
+      //loadSubtitles();
       
-      // Create a ResizeObserver to handle container size changes
-      const resizeObserver = new ResizeObserver(handleResize);
-      if (artRef.current) {
-        resizeObserver.observe(artRef.current);
-      }
-
-      const updateAssContainerSize = (isFullscreen, isWebFullscreen) => {
-        if (!artRef.current || !assInstanceRef.current) return;
-        
-        const container = artRef.current;
-        const assContainer = container.querySelector('.ass-container');
-        if (!assContainer) return;
-        
-        // Reset styles first
-        assContainer.style.position = 'absolute';
-        assContainer.style.top = '0';
-        assContainer.style.left = '0';
-        assContainer.style.width = '100%';
-        assContainer.style.height = '100%';
-        assContainer.style.zIndex = '20';
-        
-        if (isFullscreen || isWebFullscreen) {
-          // In fullscreen mode, make it cover the entire viewport
-          const targetElement = isWebFullscreen ? document.documentElement : document.fullscreenElement;
-          if (targetElement) {
-            assContainer.style.width = `${targetElement.clientWidth}px`;
-            assContainer.style.height = `${targetElement.clientHeight}px`;
-          }
-        } else {
-          // In normal mode, match the video container
-          assContainer.style.width = '100%';
-          assContainer.style.height = '100%';
-        }
-        
-        // Force ASS to recalculate and redraw
-        if (assInstanceRef.current) {
-          assInstanceRef.current.resize();
-          assInstanceRef.current.setRenderMode('pre-cache');
-        }
-      };
-
-      const handleFullscreen = () => {
-        console.log("handleFullscreen");
-        setTimeout(() => {
-          updateAssContainerSize(true, false);
-          if (assInstanceRef.current) {
-            loadSubtitles();
-          }
-        }, 100);
-      };
-
-      const handleWebFullscreen = () => {
-        console.log("handleWebFullscreen");
-          updateAssContainerSize(false, true);
-          if (assInstanceRef.current) {
-            loadSubtitles();
-          }
-      };
-
-      const handleFullscreenExit = () => {
-        setTimeout(() => {
-          updateAssContainerSize(false, false);
-          if (assInstanceRef.current) {
-            loadSubtitles();
-          }
-        }, 100);
-      };
-
-      art.on('resize', handleResize);
-      art.on('fullscreen', handleFullscreen);
-      art.on('fullscreenWeb', handleWebFullscreen);
-      art.on('fullscreenExit', handleFullscreenExit);
-      art.on('fullscreenWebExit', handleFullscreenExit);
+      // art.on('fullscreenWeb', loadSubtitles);
+      // art.on('fullscreen', loadSubtitles);
+      //art.on('fullscreenExit', loadSubtitles);
 
       art.on('video:timeupdate', () => {
         const duration = art.duration;
@@ -292,10 +251,6 @@ export default function VideoPlayer({
 
       // Cleanup function
       return () => {
-        if (resizeObserver) {
-          resizeObserver.disconnect();
-        }
-
         if (assInstanceRef.current) {
           assInstanceRef.current.destroy();
           assInstanceRef.current = null;
