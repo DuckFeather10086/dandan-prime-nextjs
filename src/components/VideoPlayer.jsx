@@ -38,7 +38,7 @@ export default function VideoPlayer({
     try {
       console.log('subtitleSrc', subtitleSrc);
 
-      option ={
+      const option = {
         container: artRef.current,
         url: videoSrc,
         poster: posterSrc,
