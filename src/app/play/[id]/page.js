@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Hls from 'hls.js';
+import { useUpdateNavbar } from '@/hooks/useUpdateNavbar';
 
 const Dplayer = dynamic(() => import('@/components/Dplayer'), { ssr: false });
 const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), { ssr: false });
@@ -15,9 +16,16 @@ export default function VideoPage() {
   const [episode, setEpisode] = useState(1);
   const [loading, setLoading] = useState(true);
   const [videoData, setVideoData] = useState(null); // 👈 初始为 null
+  const [seasonId, setSeasonId] = useState('');
   const [selectedResolution, setSelectedResolution] = useState(1080);
   const playerRef = useRef(null);
   const apiHost = process.env.NEXT_PUBLIC_API_HOST || '';
+  
+  // Update navbar with season information
+  useUpdateNavbar({
+    showBackToSeason: true,
+    seasonId: seasonId,
+  });
 
   // 组件加载时获取初始数据
   useEffect(() => {
@@ -71,6 +79,11 @@ export default function VideoPage() {
     try {
       const response = await fetch(`${apiHost}/api/bangumi/episode/${episodeId}`);
       const data = await response.json();
+      
+      // Set the season ID for the navbar
+      if (data.season_id) {
+        setSeasonId(data.season_id);
+      }
 
       let videoUrl = `${apiHost}/videos${data.file_path}/${data.file_name}`;
       if (hlsStatus) {
