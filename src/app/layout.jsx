@@ -20,11 +20,13 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`}>
+    <html lang="en" className="dark">
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-white`}>
         <NavbarProvider>
-          <Navbar />
-          <main className="flex-1">
+          <div className="sticky top-0 z-50 bg-base-100 dark:bg-gray-800">
+            <Navbar />
+          </div>
+          <main className="flex-1 w-full">
             {children}
           </main>
         </NavbarProvider>

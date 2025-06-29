@@ -66,8 +66,8 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
-      <div className="card bg-base-100 shadow-xl">
+    <div className="container mx-auto px-4 py-8 max-w-4xl dark:text-white">
+      <div className="card bg-base-100 dark:bg-gray-800 shadow-xl">
         <div className="card-body">
           <h2 className="card-title text-2xl font-bold mb-6">系统设置</h2>
           
@@ -75,10 +75,10 @@ export default function SettingsPage() {
           
           <div className="flex flex-col gap-6">
             {/* Media Library Update */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 bg-base-200 rounded-lg">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 bg-base-200 dark:bg-gray-700 rounded-lg">
               <div>
-                <h3 className="font-semibold text-lg">媒体库更新</h3>
-                <p className="text-sm opacity-70">更新您的媒体文件索引</p>
+                <h3 className="font-semibold text-lg dark:text-white">媒体库更新</h3>
+                <p className="text-sm opacity-70 dark:text-white">更新您的媒体文件索引</p>
               </div>
               <button
                 className={`btn ${isUpdating ? 'btn-disabled' : 'btn-primary'}`}
@@ -97,19 +97,15 @@ export default function SettingsPage() {
             </div>
 
             {/* HLS Streaming */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 bg-base-200 rounded-lg">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 bg-base-200 dark:bg-gray-700 rounded-lg">
               <div>
-                <h3 className="font-semibold text-lg">HLS 流媒体</h3>
-                <p className="text-sm opacity-70">启用 HLS 推流（兼容性更强）</p>
+                <h3 className="font-semibold text-lg dark:text-white">HLS 流媒体</h3>
+                <p className="text-sm opacity-70 dark:text-white">启用 HLS 推流（兼容性更强）</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm">{hlsEnabled ? '已启用' : '未启用'}</span>
+                <span className="text-sm dark:text-white">{hlsEnabled ? '已启用' : '未启用'}</span>
                 <div className="flex items-center space-x-2">
-                  <Switch
-                    id="hls-toggle"
-                    checked={hlsEnabled}
-                    onCheckedChange={handleToggleHLS}
-                  />
+                  <Switch id="hls-mode" checked={hlsEnabled} onCheckedChange={handleToggleHLS} />
                 </div>
               </div>
             </div>

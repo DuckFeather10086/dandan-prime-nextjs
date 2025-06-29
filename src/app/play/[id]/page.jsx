@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Hls from 'hls.js';
 import { useUpdateNavbar } from '@/hooks/useUpdateNavbar';
+import { useNavbar } from '@/context/NavbarContext';
 
 const Dplayer = dynamic(() => import('@/components/Dplayer'), { ssr: false });
 const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), { ssr: false });
@@ -12,20 +13,45 @@ const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), { ssr: fal
 export default function VideoPage() {
   const params = useParams();
   const episodeId = params.id;
-
+  const { navbarProps, setNavbarProps, toggleCollapse } = useNavbar();
   const [episode, setEpisode] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [videoData, setVideoData] = useState(null); // 👈 初始为 null
+  const [videoData, setVideoData] = useState(null); // 
   const [seasonId, setSeasonId] = useState('');
   const [selectedResolution, setSelectedResolution] = useState(1080);
   const playerRef = useRef(null);
   const apiHost = process.env.NEXT_PUBLIC_API_HOST || '';
   
-  // Update navbar with season information
+  // Update navbar with season information and ensure it's collapsed
   useUpdateNavbar({
     showBackToSeason: true,
     seasonId: seasonId,
   });
+
+  // Collapse navbar when component mounts
+  useEffect(() => {
+    if (toggleCollapse) {
+      toggleCollapse(true);
+    } else {
+      // Fallback in case toggleCollapse is not available
+      setNavbarProps(prev => ({
+        ...prev,
+        collapsed: true
+      }));
+    }
+    
+    // Clean up when component unmounts
+    return () => {
+      if (toggleCollapse) {
+        toggleCollapse(false);
+      } else if (setNavbarProps) {
+        setNavbarProps(prev => ({
+          ...prev,
+          collapsed: false
+        }));
+      }
+    };
+  }, [toggleCollapse, setNavbarProps]);
 
   // 组件加载时获取初始数据
   useEffect(() => {
@@ -35,7 +61,7 @@ export default function VideoPage() {
         const hlsStatus = await fetchHlsEnabled();
         const episodeData = await fetchEpisodeInfo(episodeId, hlsStatus);
         await sendLastWatchedData(episodeId);
-        setVideoData(episodeData); // 👈 所有字段准备好之后再设定
+        setVideoData(episodeData); // 
       } catch (error) {
         console.error('加载初始数据失败:', error);
       } finally {
@@ -147,7 +173,7 @@ export default function VideoPage() {
           subtitleOptions={videoData.subtitleOptions}
           danmakuItems={videoData.danmakuItems}
           hlsEnabled={videoData.hlsEnabled}
-          hasSubtitle={!!videoData.subtitleSrc} // 👈 明确告诉 VideoPlayer 是否有字幕
+          hasSubtitle={!!videoData.subtitleSrc} // 
         />
       ) : (
         <div className="text-center text-gray-500 py-10">加载中……</div>
