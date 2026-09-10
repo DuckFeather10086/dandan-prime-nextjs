@@ -205,10 +205,30 @@ export default function SeasonDetail({ seasonData: initialSeasonData, lastWatche
           {/* 剧集列表 */}
           <div className="episode-list p-12 flex-1 sm:p-4 bg-black">
 
-            {seasonData.episodes && Object.entries(seasonData.episodes).map(([dandanplayEpisodeId, episodeGroup]) => (
-              <div key={dandanplayEpisodeId} className="episode-group  mb-6">
+            {/* Groups are keyed by episode number, sorted numerically here
+                rather than leaning on how objects enumerate their keys. The
+                API is JSON, whose object keys are ordered as strings, so
+                "10" would otherwise sort before "2"; "unknown" holds the
+                extras and belongs last either way. */}
+            {seasonData.episodes && Object.entries(seasonData.episodes)
+              .sort(([a], [b]) => {
+                if (a === 'unknown') return 1;
+                if (b === 'unknown') return -1;
+                return Number(a) - Number(b);
+              })
+              .map(([episodeNo, episodeGroup]) => (
+              <div key={episodeNo} className="episode-group  mb-6">
                 <div className="card p-4 bg-white/5 rounded-lg w-[90%] mx-auto">
-                  <h3 className="text-xl mb-4">{episodeGroup[0].title}</h3>
+                  <h3 className="text-xl mb-4 flex items-baseline gap-3">
+                    {episodeNo !== 'unknown' && (
+                      <span className="text-sm text-white/50 tabular-nums shrink-0">
+                        {String(episodeNo).padStart(2, '0')}
+                      </span>
+                    )}
+                    <span className="truncate">
+                      {episodeNo === 'unknown' ? '特典・その他' : episodeGroup[0].title}
+                    </span>
+                  </h3>
 
                   {episodeGroup[0].thumbnail && (
                     <div className="episode-details mb-4 flex">
