@@ -1,183 +1,74 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import Hls from 'hls.js';
+import { chooseAudio, chooseSubtitle, playlistURL } from '@/utils/playback';
+import { episodeGroups, episodeHref, adjacentEpisodes } from '@/utils/library';
+import { readProgress } from '@/utils/progress';
 import { useUpdateNavbar } from '@/hooks/useUpdateNavbar';
-import { useNavbar } from '@/context/NavbarContext';
+import PageState from '@/components/PageState';
 
-const Dplayer = dynamic(() => import('@/components/Dplayer'), { ssr: false });
-const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), { ssr: false });
+const VideoPlayer = dynamic(() => import('@/components/VideoPlayer'), { ssr: false, loading: () => <PageState loading title="正在准备播放器" /> });
+const apiHost = process.env.NEXT_PUBLIC_API_HOST || '';
 
 export default function VideoPage() {
-  const params = useParams();
-  const episodeId = params.id;
-  const { navbarProps, setNavbarProps, toggleCollapse } = useNavbar();
-  const [episode, setEpisode] = useState(1);
+  const { id: episodeId } = useParams();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [videoData, setVideoData] = useState(null); // 
+  const [error, setError] = useState('');
+  const [video, setVideo] = useState(null);
+  const [season, setSeason] = useState(null);
   const [seasonId, setSeasonId] = useState('');
-  const [selectedResolution, setSelectedResolution] = useState(1080);
-  const playerRef = useRef(null);
-  const apiHost = process.env.NEXT_PUBLIC_API_HOST || '';
-  
-  // Update navbar with season information and ensure it's collapsed
-  useUpdateNavbar({
-    showBackToSeason: true,
-    seasonId: seasonId,
-  });
+  const [attempt, setAttempt] = useState(0);
+  useUpdateNavbar({ showBackToSeason: true, seasonId });
 
-  // Collapse navbar when component mounts
   useEffect(() => {
-    if (toggleCollapse) {
-      toggleCollapse(true);
-    } else {
-      // Fallback in case toggleCollapse is not available
-      setNavbarProps(prev => ({
-        ...prev,
-        collapsed: true
-      }));
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]);
+    setLoading(true); setError(''); setVideo(null); setSeason(null); setSeasonId('');
+    async function json(path) {
+      const response = await fetch(`${apiHost}${path}`, { signal });
+      if (!response.ok) throw new Error(`读取播放信息失败 (${response.status})`);
+      return response.json();
     }
-    
-    // Clean up when component unmounts
-    return () => {
-      if (toggleCollapse) {
-        toggleCollapse(false);
-      } else if (setNavbarProps) {
-        setNavbarProps(prev => ({
-          ...prev,
-          collapsed: false
-        }));
-      }
-    };
-  }, [toggleCollapse, setNavbarProps]);
-
-  // 组件加载时获取初始数据
-  useEffect(() => {
-    async function loadInitialData() {
-      setLoading(true);
+    async function load() {
       try {
-        const hlsStatus = await fetchHlsEnabled();
-        const episodeData = await fetchEpisodeInfo(episodeId, hlsStatus);
-        await sendLastWatchedData(episodeId);
-        setVideoData(episodeData); // 
-      } catch (error) {
-        console.error('加载初始数据失败:', error);
-      } finally {
-        setLoading(false);
-      }
+        const [episode, media, hls, progress] = await Promise.all([
+          json(`/api/bangumi/episode/${episodeId}`), json(`/api/playback/${episodeId}`),
+          json('/api/hls/enabled').catch(() => ({ hls_enabled: false })), readProgress(episodeId, signal),
+        ]);
+        let audioPreference, subtitlePreference;
+        try { audioPreference = localStorage.getItem('dandan.audioLanguage'); subtitlePreference = JSON.parse(localStorage.getItem('dandan.subtitlePreference') || 'null'); } catch { /* Preferences are optional. */ }
+        const info = { ...media, audio_tracks: media.audio_tracks || [], subtitle_tracks: media.subtitle_tracks || [], chapters: media.chapters || [] };
+        const audio = chooseAudio(info, audioPreference);
+        const subtitle = chooseSubtitle(info.subtitle_tracks, subtitlePreference);
+        const resolution = info.quality_options?.[0] ?? 1080;
+        const useHls = hls.hls_enabled || /\.mkv$/i.test(episode.file_name) || info.audio_tracks.length > 1 || /(?:hevc|h265|av1)/i.test(info.video_codec);
+        const path = `${episode.file_path}/${episode.file_name}`.split('/').map(encodeURIComponent).join('/');
+        const source = useHls ? playlistURL(apiHost, episodeId, audio, resolution) : `${apiHost}/videos${path}`;
+        const resolvedSeason = info.season_id || episode.season_id || new URLSearchParams(window.location.search).get('season') || '';
+        if (controller.signal.aborted) return;
+        setSeasonId(String(resolvedSeason));
+        // Navigation metadata and comments must not prevent a working video
+        // from opening. Abort both when switching to another episode.
+        if (resolvedSeason) json(`/api/bangumi/${resolvedSeason}/contents`).then(data => { if (!controller.signal.aborted) setSeason(data); }).catch(() => {});
+        const danmaku = await fetch(`${apiHost}/api/bangumi/danmaku/${episodeId}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(6000)]) })
+          .then(response => response.ok ? response.json() : null).catch(() => null);
+        if (!controller.signal.aborted) setVideo({ episode, mediaInfo: info, videoSrc: source, initialAudio: audio, initialSubtitle: subtitle, initialResolution: resolution, hlsEnabled: useHls, initialProgress: progress, danmakuItems: Array.isArray(danmaku?.danmakus) ? danmaku.danmakus : [] });
+      } catch (cause) { if (!controller.signal.aborted) setError(cause.name === 'TimeoutError' ? '读取媒体超时，请稍后重试。' : cause.message); }
+      finally { if (!controller.signal.aborted) setLoading(false); }
     }
+    load();
+    return () => controller.abort();
+  }, [episodeId, attempt]);
 
-    loadInitialData();
-  }, [episodeId, episode]);
-
-  const sendLastWatchedData = async (episodeId) => {
-    try {
-      const response = await fetch(`${apiHost}/api/last_watched`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: '1',
-          last_watched_episode_id: episodeId,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-    } catch (error) {
-      console.error('Error sending last watched data:', error);
-    }
-  };
-
-  const fetchHlsEnabled = async () => {
-    try {
-      const response = await fetch(`${apiHost}/api/hls/enabled`);
-      const data = await response.json();
-      return data.hls_enabled;
-    } catch (error) {
-      console.error('获取HLS状态失败:', error);
-      return false;
-    }
-  };
-
-  const fetchEpisodeInfo = async (episodeId, hlsStatus) => {
-    try {
-      const response = await fetch(`${apiHost}/api/bangumi/episode/${episodeId}`);
-      const data = await response.json();
-      
-      // Set the season ID for the navbar
-      if (data.season_id) {
-        setSeasonId(data.season_id);
-      }
-
-      let videoUrl = `${apiHost}/videos${data.file_path}/${data.file_name}`;
-      if (hlsStatus) {
-        try {
-          await fetch(`${apiHost}/api/playlist/${episodeId}`, { method: 'POST' });
-          videoUrl = `${apiHost}/stream/playlist_${selectedResolution}.m3u8`;
-        } catch (error) {
-          console.error('调用播放列表 API 错误:', error);
-        }
-      }
-
-      const subtitleSrc = (data.subtitles?.length > 0)
-        ? `${apiHost}/subtitles${data.file_path}/${data.subtitles[0]}`
-        : null;
-
-      const danmakuResponse = await fetch(`${apiHost}/api/bangumi/danmaku/${episodeId}`);
-      const danmakuItems = await danmakuResponse.json();
-
-      return {
-        title: data.title || 'Unknown Title',
-        videoSrc: videoUrl,
-        posterSrc: data.poster_path ? `${apiHost}/images${data.poster_path}` : '',
-        episodeId,
-        subtitleOptions: data.subtitles || [],
-        danmakuItems: danmakuItems.danmakus,
-        subtitleSrc,
-        hlsEnabled: hlsStatus,
-      };
-    } catch (error) {
-      console.error('获取剧集信息失败:', error);
-      return null;
-    }
-  };
-
-  const handlePrevEpisode = () => {
-    if (episode > 1) {
-      setEpisode(episode - 1);
-    }
-  };
-
-  const handleNextEpisode = () => {
-    if (episode < 12) {
-      setEpisode(episode + 1);
-    }
-  };
-
-  return (
-    <div className="container mx-auto px-4">
-      {videoData ? (
-        <VideoPlayer
-          videoSrc={videoData.videoSrc}
-          posterSrc={videoData.posterSrc}
-          subtitleSrc={videoData.subtitleSrc}
-          title={videoData.title}
-          episode={episode}
-          episodeId={episodeId}
-          onPrevEpisode={handlePrevEpisode}
-          onNextEpisode={handleNextEpisode}
-          hasPrevEpisode={episode > 1}
-          hasNextEpisode={episode < 12}
-          subtitleOptions={videoData.subtitleOptions}
-          danmakuItems={videoData.danmakuItems}
-          hlsEnabled={videoData.hlsEnabled}
-          hasSubtitle={!!videoData.subtitleSrc} // 
-        />
-      ) : (
-        <div className="text-center text-gray-500 py-10">加载中……</div>
-      )}
-    </div>
-  );
+  const groups = episodeGroups(season);
+  const index = groups.findIndex(([, files]) => files.some(file => String(file.id) === String(episodeId)));
+  // Alternative encodes are one episode; extras never become the next main episode.
+  const { previous, next } = adjacentEpisodes(season, episodeId);
+  const go = file => { if (file) router.push(episodeHref(file.id, seasonId)); };
+  return <div className="player-page">
+    {video ? <VideoPlayer key={episodeId} {...video} title={video.episode.title || video.episode.file_name} episode={video.episode.episode_no || (index >= 0 && groups[index][0] !== 'unknown' ? Number(groups[index][0]) : null)} episodeId={episodeId} seasonTitle={season?.title} fileName={video.episode.file_name} onPrevEpisode={() => go(previous)} onNextEpisode={() => go(next)} hasPrevEpisode={!!previous} hasNextEpisode={!!next} /> : <PageState loading={loading} title={loading ? '正在读取媒体信息' : '暂时无法播放'} description={loading ? '准备视频、字幕与观看进度…' : error || '没有找到可播放的视频。'} action={loading ? undefined : () => setAttempt(value => value + 1)} />}
+  </div>;
 }

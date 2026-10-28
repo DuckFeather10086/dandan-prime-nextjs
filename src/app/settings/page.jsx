@@ -1,117 +1,47 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { ArrowLeft, CheckCircle2, LoaderCircle, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { api } from '@/utils/api';
 import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 
 export default function SettingsPage() {
-  const [hlsEnabled, setHlsEnabled] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-
+  const [hls, setHls] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [updated, setUpdated] = useState(false);
   useEffect(() => {
-    const fetchHLSStatus = async () => {
-      try {
-        const data = await api.getHLSStatus();
-        setHlsEnabled(data.hls_enabled);
-      } catch (error) {
-        console.error('获取HLS状态失败:', error);
-        toast.error('获取HLS状态失败');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchHLSStatus();
-  }, []);
-
-  const handleUpdateMediaLibrary = async () => {
-    setIsUpdating(true);
-    try {
-      await api.updateMediaLibrary();
-      toast.success('媒体库更新成功');
-    } catch (error) {
-      console.error('更新媒体库失败:', error);
-      toast.error('更新媒体库失败，请重试');
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleToggleHLS = async () => {
-    const newStatus = !hlsEnabled;
-    setHlsEnabled(newStatus);
-    try {
-      const success = await api.updateHLSStatus(newStatus);
-      if (!success) {
-        throw new Error('API call failed');
-      }
-      toast.success(`HLS ${newStatus ? '启用' : '禁用'}成功`);
-    } catch (error) {
-      console.error('切换HLS状态失败:', error);
-      toast.error('切换HLS状态失败');
-      // Revert the toggle if the API call fails
-      setHlsEnabled(!newStatus);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <span className="loading loading-spinner loading-lg"></span>
-      </div>
-    );
+    let active = true;
+    setLoading(true); setError('');
+    api.getHLSStatus().then(data => { if (active) setHls(Boolean(data.hls_enabled)); })
+      .catch(() => { if (active) setError('无法读取播放设置，请检查后端连接。'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [attempt]);
+  async function updateLibrary() {
+    if (updating) return;
+    setUpdating(true); setUpdated(false);
+    try { await api.updateMediaLibrary(); setUpdated(true); toast.success('媒体库更新成功'); }
+    catch { toast.error('媒体库更新失败，请稍后重试'); }
+    finally { setUpdating(false); }
   }
-
-  return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl dark:text-white">
-      <div className="card bg-base-100 dark:bg-gray-800 shadow-xl">
-        <div className="card-body">
-          <h2 className="card-title text-2xl font-bold mb-6">系统设置</h2>
-          
-          <div className="divider my-2"></div>
-          
-          <div className="flex flex-col gap-6">
-            {/* Media Library Update */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 bg-base-200 dark:bg-gray-700 rounded-lg">
-              <div>
-                <h3 className="font-semibold text-lg dark:text-white">媒体库更新</h3>
-                <p className="text-sm opacity-70 dark:text-white">更新您的媒体文件索引</p>
-              </div>
-              <button
-                className={`btn ${isUpdating ? 'btn-disabled' : 'btn-primary'}`}
-                onClick={handleUpdateMediaLibrary}
-                disabled={isUpdating}
-              >
-                {isUpdating ? (
-                  <>
-                    <span className="loading loading-spinner loading-sm"></span>
-                    更新中...
-                  </>
-                ) : (
-                  '更新媒体库'
-                )}
-              </button>
-            </div>
-
-            {/* HLS Streaming */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 bg-base-200 dark:bg-gray-700 rounded-lg">
-              <div>
-                <h3 className="font-semibold text-lg dark:text-white">HLS 流媒体</h3>
-                <p className="text-sm opacity-70 dark:text-white">启用 HLS 推流（兼容性更强）</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm dark:text-white">{hlsEnabled ? '已启用' : '未启用'}</span>
-                <div className="flex items-center space-x-2">
-                  <Switch id="hls-mode" checked={hlsEnabled} onCheckedChange={handleToggleHLS} />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  async function toggleHLS(value) {
+    if (saving) return;
+    setSaving(true);
+    try { await api.updateHLSStatus(value); setHls(value); toast.success(value ? '已启用 HLS' : '已关闭 HLS'); }
+    catch { toast.error('播放设置保存失败，请重试'); }
+    finally { setSaving(false); }
+  }
+  return <div className="settings-page page-width">
+    <Link href="/" className="text-link"><ArrowLeft size={16} />返回片库</Link>
+    <div className="settings-heading"><h1>系统设置</h1><p>管理媒体库，让播放更适合你的设备。</p></div>
+    <section className="settings-section" aria-labelledby="library-settings"><h2 id="library-settings">媒体库</h2><div className="setting-row"><div><h3>更新媒体库</h3><p>扫描媒体目录，更新本地文件索引。</p>{updated && <span className="success-message"><CheckCircle2 size={14} />媒体库已更新</span>}</div><button className="button button-secondary" disabled={updating} onClick={updateLibrary}>{updating ? <LoaderCircle size={17} className="spin" /> : <RefreshCw size={17} />}{updating ? '正在更新…' : '更新媒体库'}</button></div></section>
+    <section className="settings-section" aria-labelledby="playback-settings"><h2 id="playback-settings">播放</h2><div className="setting-row"><div><h3><label htmlFor="hls-mode">HLS 流媒体</label></h3><p id="hls-description">转码为浏览器兼容的视频流。MKV 和多音轨文件会自动使用 HLS。</p></div><div className="setting-switch"><span>{loading ? '读取中…' : saving ? '保存中…' : error ? '状态未知' : hls ? '已启用' : '未启用'}</span><Switch id="hls-mode" aria-describedby="hls-description" checked={hls} disabled={loading || saving || !!error} onCheckedChange={toggleHLS} /></div></div>{error && <div className="inline-error" role="alert"><span>{error}</span><button className="text-link" onClick={() => setAttempt(value => value + 1)}>重新加载</button></div>}</section>
+    <p className="settings-footnote">DanDan Prime · 收藏和已看标记保存在浏览器，观看进度同时尝试同步到服务器。</p>
+  </div>;
 }

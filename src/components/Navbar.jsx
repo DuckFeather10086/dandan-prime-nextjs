@@ -11,7 +11,7 @@ export default function Navbar() {
   const { showBackToSeason, seasonId } = navbarProps;
   const isPlayerPage = pathname?.startsWith('/play/');
   return (
-    <div className="navbar bg-base-100 text-base-content shadow-lg">
+    <nav aria-label="主导航" className="navbar bg-base-100 text-base-content shadow-lg original-navbar">
       <div className="flex-1">
         <Link href="/" className="btn btn-ghost text-xl">
           DanDan Prime
@@ -46,6 +46,6 @@ export default function Navbar() {
           <FaCog className="w-5 h-5" />
         </Link>
       </div>
-    </div>
+    </nav>
   );
 }

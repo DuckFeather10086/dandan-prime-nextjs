@@ -2,6 +2,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import { NavbarProvider } from "@/context/NavbarContext";
+import { Toaster } from 'react-hot-toast';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -20,15 +21,15 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-white`}>
+    <html lang="zh-CN" className="dark">
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <NavbarProvider>
-          <div className="sticky top-0 z-50 bg-base-100 dark:bg-gray-800">
-            <Navbar />
-          </div>
-          <main className="flex-1 w-full">
+          <a className="skip-link" href="#main-content">跳到主要内容</a>
+          <header className="sticky top-0 z-50"><Navbar /></header>
+          <main id="main-content" className="app-main">
             {children}
           </main>
+          <Toaster position="bottom-center" toastOptions={{ style: { background: '#1f2937', color: '#ffffff' } }} />
         </NavbarProvider>
       </body>
     </html>

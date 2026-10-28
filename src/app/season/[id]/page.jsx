@@ -1,50 +1,28 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import axios from 'axios';
 import SeasonDetail from '@/app/components/SeasonDetail';
-import { use } from 'react';
+import PageState from '@/components/PageState';
+import { episodeGroups } from '@/utils/library';
 
 export default function SeasonPage() {
-  const params = useParams();
-  const animeId = params.id;
-  console.log(animeId);
-  const [seasonData, setSeasonData] = useState(null);
-  const [lastWatchedEpisode, setLastWatchedEpisode] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-
-  
+  const { id } = useParams();
+  const [season, setSeason] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    // 获取季度详细信息
-    const fetchSeasonInfo = async () => {
-      if (!animeId) return;
-      
-      console.log('Fetching season info for anime ID:', animeId);
-      try {
-        const apiHost = process.env.NEXT_PUBLIC_API_HOST;
-        // 获取动画季度内容
-        const response_anime = await axios.get(`${apiHost}/api/bangumi/${animeId}/contents`);
-        setSeasonData(response_anime.data);
-        
-        // 如果存在最后观看的剧集ID，获取该剧集信息
-        if (response_anime.data.last_watched_episode_id) {
-          const response_episode = await axios.get(`${apiHost}/api/bangumi/episode/${response_anime.data.last_watched_episode_id}`);
-          setLastWatchedEpisode(response_episode.data);
-        }
-      } catch (error) {
-        console.error('Error fetching season info:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    if (animeId) {
-      fetchSeasonInfo();
-    }
-  }, [animeId]);
-
-
-
-  return <SeasonDetail seasonData={seasonData} lastWatchedEpisode={lastWatchedEpisode} isLoading={isLoading} />;
+    const controller = new AbortController();
+    setLoading(true); setError(''); setSeason(null);
+    fetch(`${process.env.NEXT_PUBLIC_API_HOST || ''}/api/bangumi/${encodeURIComponent(id)}/contents`, { signal: controller.signal })
+      .then(async response => { if (!response.ok) throw new Error('无法读取番剧信息，请检查后端连接后重试。'); const data = await response.json(); if (!data?.id) throw new Error('没有找到这部作品的媒体文件。'); return data; })
+      .then(setSeason).catch(cause => { if (!controller.signal.aborted) setError(cause.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [id, attempt]);
+  if (loading) return <PageState loading title="正在加载番剧" description="读取作品信息与本地剧集…" />;
+  if (error) return <PageState title="番剧加载失败" description={error} action={() => setAttempt(value => value + 1)} />;
+  const last = episodeGroups(season).flatMap(([, files]) => files).find(file => file.id === season?.last_watched_episode_id);
+  return <SeasonDetail key={id} seasonData={season} lastWatchedEpisode={last} />;
 }

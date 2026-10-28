@@ -1,267 +1,113 @@
 'use client';
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import Image from 'next/image';
-import axios from 'axios';
 
-export default function SeasonDetail({ seasonData: initialSeasonData, lastWatchedEpisode: initialLastWatchedEpisode, isLoading: initialIsLoading }) {
-  const router = useRouter();
-  const [seasonData, setSeasonData] = useState(initialSeasonData);
-  const [lastWatchedEpisode, setLastWatchedEpisode] = useState(initialLastWatchedEpisode);
-  const [isLoading, setIsLoading] = useState(initialIsLoading !== false);
-  // 改为使用自定义展开状态
+import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import { ArrowUpRight, Check, Heart, Play, Star } from 'lucide-react';
+import Poster from '@/components/Poster';
+import PageState from '@/components/PageState';
+import { useLibraryPreferences } from '@/hooks/useLibraryPreferences';
+import { episodeGroups, episodeHref, scoreLabel } from '@/utils/library';
+
+export default function SeasonDetail({ seasonData, lastWatchedEpisode }) {
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const summaryRef = useRef(null);
+  const [metadata, setMetadata] = useState(null);
+  const [metadataError, setMetadataError] = useState(false);
+  const [metadataAttempt, setMetadataAttempt] = useState(0);
+  const { favorites, watched, toggle } = useLibraryPreferences();
+  const groups = episodeGroups(seasonData);
+  const playable = groups.find(([key]) => key !== 'unknown')?.[1]?.[0] || groups[0]?.[1]?.[0];
+  const resume = lastWatchedEpisode || playable;
+  const favorite = favorites.includes(String(seasonData.id));
+  const seen = watched.includes(String(seasonData.id));
+  const summary = seasonData.summary || metadata?.summary || '';
+  const canExpand = summary.length > 200;
+  const summaryContent = canExpand && !summaryExpanded ? summary.slice(0, 200) + '...' : summary;
 
-  // 获取季度和最后观看的剧集信息
-  const fetchSeasonInfo = useCallback(async (animeId) => {
-    if (!animeId) return;
-
-    console.log('Fetching season info for anime ID:', animeId);
-    try {
-      const apiHost = process.env.NEXT_PUBLIC_API_HOST;
-      // 获取动画季度内容
-      const response_anime = await axios.get(`${apiHost}/api/bangumi/${animeId}/contents`);
-      setSeasonData(response_anime.data);
-
-      // 如果存在最后观看的剧集ID，获取该剧集信息
-      if (response_anime.data.last_watched_episode_id) {
-        const response_episode = await axios.get(`${apiHost}/api/bangumi/episode/${response_anime.data.last_watched_episode_id}`);
-        setLastWatchedEpisode(response_episode.data);
-      }
-    } catch (error) {
-      console.error('Error fetching season info:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // 如果 props 中没有传入数据，但有 animeId 时自己获取数据
   useEffect(() => {
-    if (!initialSeasonData && !initialLastWatchedEpisode && window.location.pathname) {
-      const pathParts = window.location.pathname.split('/');
-      const animeId = pathParts[pathParts.length - 1];
-      if (animeId) {
-        fetchSeasonInfo(animeId);
-      }
-    }
-  }, [initialSeasonData, initialLastWatchedEpisode, fetchSeasonInfo]);
-
-  // 导航到播放页面
-  const navigateToEpisodeInfo = (episodeId) => {
-    router.push(`/play/${episodeId}`);
-  };
-
-  // 处理摘要展开/收起
-  const toggleSummary = () => {
-    setSummaryExpanded(!summaryExpanded);
-  };
-
-  // 计算是否需要截断
-  const isSummaryTruncated = (summary) => {
-    // 检查摘要的长度是否超过200个字符
-    return summary && summary.length > 200;
-  };
-
-  // 获取摘要内容
-  const getSummaryContent = (summary) => {
-    if (!summary) return '';
-    if (!isSummaryTruncated(summary) || summaryExpanded) {
-      return summary;
-    }
-    return summary.substring(0, 200) + '...';
-  };
-
-  // 监听折叠状态变化，展开时自动滚动
-  useEffect(() => {
-    if (summaryExpanded && summaryRef.current) {
-      // 使用 setTimeout 确保在 DOM 更新后滚动
-      setTimeout(() => {
-        summaryRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 100);
-    }
+    if (!summaryExpanded || !summaryRef.current) return;
+    const timer = setTimeout(() => {
+      summaryRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' });
+    }, 100);
+    return () => clearTimeout(timer);
   }, [summaryExpanded]);
 
-  return (
-    <div className="season-detail-page min-h-screen flex flex-col bg-[#0f171e] text-white font-sans">
-      {isLoading || !seasonData ? (
-        <div className="flex justify-center items-center min-h-screen">
-          <span className="loading loading-spinner loading-lg"></span>
-        </div>
-      ) : (
-        <>
-          {/* 英雄横幅 - 根据摘要展开状态动态调整高度 */}
-          <div className={`hero-banner relative ${summaryExpanded ? 'h-[100vh]' : 'h-[80vh]'} transition-all duration-500 ease-in-out`}>
- 
-            <div className="absolute inset-0 overflow-hidden">
-              <div className="relative w-full h-full">
-                <Image
-                  src={seasonData.image_url}
-                  alt={seasonData.title}
-                  fill
-                  className="object-cover"
-                  priority
-                />
-                <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/60 to-black"></div>
-                <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/40 to-transparent"></div>
-              </div>
-            </div> 
+  function toggleSummary() { if (canExpand) setSummaryExpanded(value => !value); }
+  function onSummaryKeyDown(event) {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleSummary(); }
+  }
 
-            {/* Content Section - Left-aligned like Prime */}
-            <div className="banner-content absolute inset-0 flex flex-col justify-center px-24 md:px-16 sm:px-8">
-              <div className="max-w-[50%] md:max-w-[70%] sm:max-w-[90%] ml-8">
-                {/* 标题和摘要区域，用自定义的展开收起逻辑替代collapse */}
-                <div className="mb-6" ref={summaryRef}>
-                  <h1 className="text-5xl md:text-4xl sm:text-3xl font-bold mb-2 text-left">{seasonData.title}</h1>
-                  
-                  <div 
-                    className={`summary-container ${summaryExpanded ? 'max-h-80 overflow-y-auto' : 'max-h-24 overflow-hidden'} transition-all duration-500 ease-in-out`} 
-                    onClick={toggleSummary}
-                    style={{cursor: isSummaryTruncated(seasonData.summary) ? 'pointer' : 'default'}}
-                  >
-                    <p className="text-gray-200 text-lg md:text-base sm:text-sm max-w-[90%] transition-opacity duration-300">
-                      {getSummaryContent(seasonData.summary)}
-                    </p>
-                    
-                    {isSummaryTruncated(seasonData.summary) && !summaryExpanded && (
-                      <span className="text-primary text-sm ml-1 transition-opacity duration-300">点击展开</span>
-                    )}
-                    
-                    {summaryExpanded && (
-                      <span className="text-primary text-sm block mt-2 transition-opacity duration-300">点击收起</span>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Ratings and Metadata - horizontal layout */}
-                <div className="flex items-center gap-3 mb-4 flex-wrap">
-                  <div className="flex items-center">
-                    {/* 使用星星图标替代原来的灰色方块，支持半星评分 */}
-                    <div className="flex items-center">
-                      {[...Array(5)].map((_, index) => {
-                        const starValue = index + 1;
-                        const score = seasonData.rate_score / 2.0;
-                        console.log(score)
-                        return (
-                          <div key={index} className="relative text-gray-400">
-                            {/* 背景星星 */}
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                            </svg>
-                            {/* 前景星星（根据评分显示全星或半星） */}
-                            <div 
-                              className="absolute top-0 left-0 overflow-hidden text-yellow-400" 
-                              style={{ width: `${Math.min(100, Math.max(0, (score - index) * 100))}%` }}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                              </svg>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <span className="text-sm ml-2 text-gray-300">
-                      ({seasonData.rate_score.toFixed(1)})
-                    </span>
-                  </div>
+  useEffect(() => {
+    const controller = new AbortController();
+    setMetadataError(false);
+    fetch(`/metadata/${seasonData.id}`, { signal: controller.signal }).then(response => {
+      if (!response.ok) throw new Error('metadata unavailable');
+      return response.json();
+    }).then(setMetadata).catch(() => { if (!controller.signal.aborted) setMetadataError(true); });
+    return () => controller.abort();
+  }, [seasonData.id, metadataAttempt]);
 
-                  <span className="text-gray-300">|</span>
-
-                  <span className="text-gray-300">
-                    {seasonData.air_date}
-                  </span>
-
-                  <span className="text-gray-300">|</span>
-
-                  <span className="text-gray-300">
-                    {seasonData.total_episodes} エピソード
-                  </span>
-                </div>
-
-                {/* Last watched episode */}
-                {lastWatchedEpisode && (
-                  <div className="mb-6">
-                    <span className="text-primary font-medium">
-                      上次看到: 第 {lastWatchedEpisode.episode_no} 集 {lastWatchedEpisode.title}
-                    </span>
-                  </div>
-                )}
-
-                {/* Action buttons - similar to Prime's layout */}
-                <div className="flex items-center gap-4 mt-4">
-                  <button className="btn btn-primary flex items-center gap-2 px-6">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                    </svg>
-                    エピソード1 続けて観る
-                  </button>
-
-                </div>
-              </div>
+  return <div className="season-detail-page">
+    <section className={`season-hero hero-banner${summaryExpanded ? ' summary-expanded' : ''}`} aria-labelledby="season-title">
+      <Poster src={seasonData.image_url} alt="" className="season-background" priority sizes="100vw" />
+      <div className="season-shade" />
+      <div className="banner-content">
+        <div className="season-copy">
+          <div className="season-summary-group" ref={summaryRef}>
+            <h1 id="season-title">{seasonData.title}</h1>
+            {metadata?.name && metadata.name !== seasonData.title && <p className="original-title">{metadata.name}</p>}
+            <div
+              id="season-summary"
+              className={`summary-container${summaryExpanded ? ' is-expanded' : ''}`}
+              role={canExpand ? 'button' : undefined}
+              tabIndex={canExpand ? 0 : undefined}
+              aria-label={canExpand ? summaryExpanded ? '收起简介' : '展开简介' : undefined}
+              aria-expanded={canExpand ? summaryExpanded : undefined}
+              onClick={toggleSummary}
+              onKeyDown={canExpand ? onSummaryKeyDown : undefined}
+            >
+              <p>{summaryContent || '这部作品暂时没有简介。'}</p>
+              {canExpand && <span className="summary-hint">{summaryExpanded ? '点击收起' : '点击展开'}</span>}
             </div>
           </div>
-
-          {/* 剧集列表 */}
-          <div className="episode-list p-12 flex-1 sm:p-4 bg-black">
-
-            {/* Groups are keyed by episode number, sorted numerically here
-                rather than leaning on how objects enumerate their keys. The
-                API is JSON, whose object keys are ordered as strings, so
-                "10" would otherwise sort before "2"; "unknown" holds the
-                extras and belongs last either way. */}
-            {seasonData.episodes && Object.entries(seasonData.episodes)
-              .sort(([a], [b]) => {
-                if (a === 'unknown') return 1;
-                if (b === 'unknown') return -1;
-                return Number(a) - Number(b);
-              })
-              .map(([episodeNo, episodeGroup]) => (
-              <div key={episodeNo} className="episode-group  mb-6">
-                <div className="card p-4 bg-white/5 rounded-lg w-[90%] mx-auto">
-                  <h3 className="text-xl mb-4 flex items-baseline gap-3">
-                    {episodeNo !== 'unknown' && (
-                      <span className="text-sm text-white/50 tabular-nums shrink-0">
-                        {String(episodeNo).padStart(2, '0')}
-                      </span>
-                    )}
-                    <span className="truncate">
-                      {episodeNo === 'unknown' ? '特典・その他' : episodeGroup[0].title}
-                    </span>
-                  </h3>
-
-                  {episodeGroup[0].thumbnail && (
-                    <div className="episode-details mb-4 flex">
-                      <div className="relative w-48 h-28 rounded-lg overflow-hidden mr-4">
-                        <Image
-                          src={episodeGroup[0].thumbnail}
-                          alt={episodeGroup[0].title}
-                          fill
-                          className="object-contain"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-1">
-                    {episodeGroup.map((episode) => (
-                      <div key={episode.id} className="episode-item flex justify-between items-center p-2 bg-white/5 rounded h-8">
-                        <p className="episode-filename truncate flex-1 text-white text-base mr-4 leading-5">{episode.file_name}</p>
-                        <button
-                          className="play-btn text-[#00a8e1] hover:text-[#0082b0] transition-colors duration-300"
-                          onClick={() => navigateToEpisodeInfo(episode.id)}
-                        >
-                          ▶
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="media-meta">
+            {scoreLabel(seasonData.rate_score) && <span className="season-rating" aria-label={`评分 ${scoreLabel(seasonData.rate_score)}`}>
+              <span className="rating-stars" aria-hidden="true">{Array.from({ length: 5 }, (_, index) => <span className="rating-star" key={index}><Star size={18} fill="currentColor" /><span style={{ width: `${Math.min(100, Math.max(0, (Number(seasonData.rate_score) / 2 - index) * 100))}%` }}><Star size={18} fill="currentColor" /></span></span>)}</span>
+              <span>({scoreLabel(seasonData.rate_score)})</span>
+            </span>}
+            {seasonData.air_date && <><span aria-hidden="true">|</span><span>{seasonData.air_date}</span></>}
+            {seasonData.total_episodes > 0 && <><span aria-hidden="true">|</span><span>{seasonData.total_episodes} 集</span></>}
           </div>
-        </>
-      )}
+          {lastWatchedEpisode && <p className="season-last-watched">上次看到：第 {lastWatchedEpisode.episode_no || ''} 集 {lastWatchedEpisode.title}</p>}
+          <div className="season-actions">
+            {resume && <Link className="btn btn-primary" href={episodeHref(resume.id, seasonData.id)}><Play size={18} fill="currentColor" />{lastWatchedEpisode ? `继续第 ${resume.episode_no || ''} 集` : '开始观看'}</Link>}
+            <button className="button button-secondary" aria-pressed={favorite} onClick={() => toggle('favorites', seasonData.id)}><Heart size={18} fill={favorite ? 'currentColor' : 'none'} />{favorite ? '已收藏' : '收藏'}</button>
+            <button className="icon-button" aria-label={seen ? '取消已看标记' : '标记为已看'} aria-pressed={seen} onClick={() => toggle('watched', seasonData.id)}><Check size={20} /></button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <div className="season-episodes-surface">
+    <div className="season-body">
+
+      <section className="episode-section" aria-labelledby="episodes-heading">
+        <h2 id="episodes-heading" className="sr-only">剧集</h2>
+        {groups.length === 0 ? <PageState title="还没有可播放的剧集" description="更新媒体库后，再回来看看。" /> : <div className="episode-list">{groups.map(([number, files]) => <article className="episode-row" key={number}>
+          <div className="episode-info"><h3><span className="episode-number">{number === 'unknown' ? 'SP' : number.padStart(2, '0')}</span>{number === 'unknown' ? '特典・その他' : files[0].title || `第 ${number} 集`}</h3>
+            {files[0].thumbnail && <Poster src={files[0].thumbnail} alt={files[0].title || ''} className="episode-thumbnail" sizes="192px" />}
+            <div className="episode-files">{files.map(file => <Link key={file.id} href={episodeHref(file.id, seasonData.id)} className="episode-file"><span className="episode-file-name">{file.file_name || file.title || '播放剧集'}</span>{file.id === lastWatchedEpisode?.id && <span className="resume-label">上次观看</span>}<span className="episode-file-play"><Play size={15} fill="currentColor" /><span>播放</span></span></Link>)}</div>
+          </div>
+        </article>)}</div>}
+      </section>
+      <aside className="metadata-section" aria-labelledby="metadata-heading"><h2 id="metadata-heading">关于作品</h2>
+        <dl className="metadata-list"><div><dt>首播</dt><dd>{seasonData.air_date || '暂无信息'}</dd></div><div><dt>类型</dt><dd>{seasonData.platform || '暂无信息'}</dd></div><div><dt>集数</dt><dd>{seasonData.total_episodes > 0 ? `${seasonData.total_episodes} 集` : '暂无信息'}</dd></div>
+          {metadata?.infobox?.filter(item => ['导演', '原作', '动画制作', '音乐', '人物设定', '脚本', '系列构成', '单集片长'].includes(item.key)).map((item, i) => <div key={`${item.key}-${i}`}><dt>{item.key}</dt><dd>{typeof item.value === 'string' ? item.value : Array.isArray(item.value) ? item.value.map(value => value.v).filter(Boolean).join('、') : '暂无信息'}</dd></div>)}
+        </dl>
+        {metadata?.tags?.length > 0 && <div className="tag-list">{metadata.tags.slice(0, 8).map(tag => <span key={tag.name}>{tag.name}</span>)}</div>}
+        {metadataError && <p className="storage-note">扩展资料暂时无法加载。<button className="text-link" onClick={() => setMetadataAttempt(value => value + 1)}>重试</button></p>}
+        <a className="text-link metadata-source" href={`https://bgm.tv/subject/${seasonData.id}`} target="_blank" rel="noopener noreferrer">在 Bangumi 查看<ArrowUpRight size={15} /></a>
+      </aside>
     </div>
-  );
+    </div>
+  </div>;
 }
